@@ -249,9 +249,16 @@ python chechen_corpus_toolkit.py corpus.json --mode process --export keyman --mi
 Create a `.combined` dictionary for [aosp-dictionaries](https://codeberg.org/Helium314/aosp-dictionaries)-compatible
 Android keyboards such as HeliBoard and OpenBoard:
 ```bash
-python chechen_corpus_toolkit.py corpus.json --mode process --export aosp --min-frequency 2
+python chechen_corpus_toolkit.py --mode process --export aosp --blacklist review/aosp_review.tsv
 # Output: exports/main_ce.combined
 ```
+
+**Native-speaker review** (`review/aosp_review.tsv`): this file holds the words a native speaker has reviewed, one row per word with a `keep` or `drop` decision. `--blacklist` drops the `drop` rows. To add new candidates after a corpus update (existing decisions are kept):
+```bash
+python chechen_corpus_toolkit.py --mode process --export keyman
+python review/generate_candidates.py exports/keyman_wordlist.tsv <aosp-dictionaries>/wordlists/main_ru.combined
+```
+Candidates are likely Russian words (common in Russian, seen 4 times or fewer in the corpus, no Chechen-only letters, so `drop` by default) and two-letter words (`drop` by default only when there's no vowel).
 
 ### Corpus Structure
 Your corpus JSON should follow this structure:

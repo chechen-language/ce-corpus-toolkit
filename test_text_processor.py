@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 
 from chechen_corpus_toolkit import ExportGenerator
@@ -14,6 +16,16 @@ class HyphenTest(unittest.TestCase):
     def test_drops_hyphen_fragments(self):
         words = self.processor.extract_and_clean_words("ду- -а -- хетта-")
         self.assertFalse([w for w in words if w.startswith("-") or w.endswith("-")], words)
+
+
+class BlacklistTest(unittest.TestCase):
+    def test_review_tsv_blacklists_only_drop_rows(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".tsv", encoding="utf-8", delete=False) as f:
+            f.write("word\tce_count\tru_f\tcategory\tdecision\nдля\t2\t187\trussian?\tdrop\nда\t9\t200\ttwo-letter\tkeep\n")
+        processor = ChechenTextProcessor()
+        processor.load_blacklist(f.name)
+        os.unlink(f.name)
+        self.assertEqual(processor.blacklisted_words, {"для"})
 
 
 class AospExportTest(unittest.TestCase):

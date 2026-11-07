@@ -67,13 +67,14 @@ class ChechenTextProcessor:
         )
     
     def load_blacklist(self, filepath: str) -> bool:
-        """Load blacklisted words from file."""
+        """Load blacklisted words: one word per line, or a review TSV (word ... decision) where only "drop" rows count."""
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
-                self.blacklisted_words = {
-                    line.strip().lower() for line in f 
-                    if line.strip()
-                }
+                lines = [line.rstrip('\n').split('\t') for line in f if line.strip()]
+            if lines and lines[0][-1] == 'decision':
+                self.blacklisted_words = {cols[0].lower() for cols in lines[1:] if cols[-1].strip() == 'drop'}
+            else:
+                self.blacklisted_words = {cols[0].strip().lower() for cols in lines}
             if self.enable_logging:
                 logging.info(f"Loaded {len(self.blacklisted_words)} blacklisted words")
             return True
