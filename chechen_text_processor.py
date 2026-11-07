@@ -205,9 +205,9 @@ class ChechenTextProcessor:
         # Handle compound words with hyphens
         if '-' in word:
             parts = word.split('-')
-            # Keep compound words if all parts are valid Chechen
-            if all(all(char in self.chechen_letters for char in part) 
-                   for part in parts if part):
+            # Empty parts ("ду-", "-а", "--") are line-break or quote fragments, not compounds
+            if all(part and all(char in self.chechen_letters for char in part)
+                   for part in parts):
                 return word
         
         # Remove non-Chechen characters
