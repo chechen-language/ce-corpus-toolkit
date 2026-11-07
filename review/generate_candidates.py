@@ -1,20 +1,19 @@
-"""Add new native-review candidates to review/aosp_review.tsv, keeping every existing decision.
+"""Add new native-review candidates to review/keep.txt or review/drop.txt, leaving reviewed words alone.
 
 Usage:
     python review/generate_candidates.py exports/keyman_wordlist.tsv path/to/aosp-dictionaries/wordlists/main_ru.combined
 
-Candidates:
-  russian?   common in Russian (ru f >= 100), rare in the Chechen corpus (count <= 4), no Chechen-only letter
-             combination. Default: drop.
-  two-letter every two-letter word. Default: keep, or drop if it has no vowel (a lone letter fragment like "кх").
+Candidates and their default list:
+  likely Russian  common in Russian (ru f >= 100), rare in the Chechen corpus (count <= 4), no Chechen-only
+                  letter combination -> drop.txt
+  two-letter      -> keep.txt, or drop.txt if it has no vowel (a lone letter fragment like "кх")
 """
 import csv
 import re
 import sys
 from pathlib import Path
 
-REVIEW_FILE = Path(__file__).parent / "aosp_review.tsv"
-COLUMNS = ["word", "ce_count", "ru_f", "category", "decision"]
+REVIEW_DIR = Path(__file__).parent
 CHECHEN_MARKERS = ("ӏ", "кх", "къ", "хь", "аь", "оь", "уь", "юь", "яь", "гӏ", "еь")
 VOWELS = set("аеёиоуыэюя")
 
@@ -30,35 +29,34 @@ def load_ru_frequencies(combined_path: str) -> dict:
     return ru
 
 
-def candidate(word: str, count: int, ru: dict):
-    if word in ru and ru[word] >= 100 and count <= 4 and not any(m in word for m in CHECHEN_MARKERS):
-        return {"word": word, "ce_count": count, "ru_f": ru[word], "category": "russian?", "decision": "drop"}
+def default_list(word: str, count: int, ru: dict):
+    if ru.get(word, 0) >= 100 and count <= 4 and not any(m in word for m in CHECHEN_MARKERS):
+        return "drop"
     if len(word) == 2:
-        decision = "keep" if VOWELS & set(word) else "drop"
-        return {"word": word, "ce_count": count, "ru_f": ru.get(word, ""), "category": "two-letter", "decision": decision}
+        return "keep" if VOWELS & set(word) else "drop"
     return None
 
 
-def main(keyman_tsv: str, ru_combined: str) -> None:
-    existing = {}
-    if REVIEW_FILE.exists():
-        with open(REVIEW_FILE, encoding="utf-8") as f:
-            existing = {row["word"]: row for row in csv.DictReader(f, delimiter="\t")}
+def read_list(name: str) -> set:
+    path = REVIEW_DIR / f"{name}.txt"
+    return set(path.read_text(encoding="utf-8").split()) if path.exists() else set()
 
+
+def main(keyman_tsv: str, ru_combined: str) -> None:
+    lists = {name: read_list(name) for name in ("keep", "drop")}
+    reviewed = lists["keep"] | lists["drop"]
     ru = load_ru_frequencies(ru_combined)
+
     with open(keyman_tsv, encoding="utf-8") as f:
         for row in csv.DictReader(f, delimiter="\t"):
-            if row["word"] not in existing:
-                found = candidate(row["word"], int(row["count"]), ru)
-                if found:
-                    existing[found["word"]] = found
+            word = row["word"]
+            target = None if word in reviewed else default_list(word, int(row["count"]), ru)
+            if target:
+                lists[target].add(word)
 
-    rows = sorted(existing.values(), key=lambda r: (r["category"], -int(r["ru_f"] or 0), r["word"]))
-    with open(REVIEW_FILE, "w", encoding="utf-8", newline="\n") as f:
-        writer = csv.DictWriter(f, fieldnames=COLUMNS, delimiter="\t", lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"{len(rows)} rows in {REVIEW_FILE}")
+    for name, words in lists.items():
+        (REVIEW_DIR / f"{name}.txt").write_text("".join(w + "\n" for w in sorted(words)), encoding="utf-8", newline="\n")
+        print(f"{name}.txt: {len(words)} words")
 
 
 if __name__ == "__main__":

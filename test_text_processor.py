@@ -1,9 +1,8 @@
-import os
-import tempfile
 import unittest
 
 from chechen_corpus_toolkit import ExportGenerator
 from chechen_text_processor import ChechenTextProcessor
+from review.generate_candidates import default_list
 
 
 class HyphenTest(unittest.TestCase):
@@ -18,14 +17,14 @@ class HyphenTest(unittest.TestCase):
         self.assertFalse([w for w in words if w.startswith("-") or w.endswith("-")], words)
 
 
-class BlacklistTest(unittest.TestCase):
-    def test_review_tsv_blacklists_only_drop_rows(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".tsv", encoding="utf-8", delete=False) as f:
-            f.write("word\tce_count\tru_f\tcategory\tdecision\nдля\t2\t187\trussian?\tdrop\nда\t9\t200\ttwo-letter\tkeep\n")
-        processor = ChechenTextProcessor()
-        processor.load_blacklist(f.name)
-        os.unlink(f.name)
-        self.assertEqual(processor.blacklisted_words, {"для"})
+class ReviewCandidatesTest(unittest.TestCase):
+    def test_default_lists(self):
+        ru = {"для": 187, "хилла": 120, "кхин": 150}
+        self.assertEqual(default_list("для", 2, ru), "drop")
+        self.assertIsNone(default_list("хилла", 500, ru))  # frequent in Chechen
+        self.assertIsNone(default_list("кхин", 1, ru))  # Chechen-only letters
+        self.assertEqual(default_list("да", 50, ru), "keep")
+        self.assertEqual(default_list("кх", 3, ru), "drop")
 
 
 class AospExportTest(unittest.TestCase):
