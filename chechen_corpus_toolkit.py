@@ -22,6 +22,7 @@ import csv
 import argparse
 import gzip
 import math
+import re
 import shutil
 import sys
 import time
@@ -168,8 +169,8 @@ class ExportGenerator:
             if not (min_length <= len(word) <= max_length):
                 continue
 
-            # Remove words with excessive repetition (like "ааа")
-            if len(set(word)) == 1 and len(word) > 2:
+            # Chechen geminates are at most double, so any letter tripled ("ааа", "дааа") is noise
+            if re.search(r'(.)\1\1', word):
                 continue
 
             filtered_words.append((word, count))
@@ -178,23 +179,24 @@ class ExportGenerator:
 
     @staticmethod
     def map_to_aosp_frequencies(wordlist: List[Tuple[str, int]]) -> List[Tuple[str, int]]:
-        """Map raw counts to AOSP's 0–255 logarithmic frequency scale.
+        """Map raw counts to the AOSP frequency range 15–254 on a log scale.
 
-        f = round(255 * log(count + 1) / log(max_count + 1))
+        Same formula as aosp-dictionaries scripts/wordlist.py create_wordlist_combined:
+        values below 15 are special in AOSP, so normal words must not use them.
         Returns the filtered (Keyman-style) wordlist with counts replaced by
         AOSP frequencies, sorted by frequency descending then word ascending.
         """
+        min_f, max_f = 15, 254
         filtered = ExportGenerator.filter_keyman_words(wordlist)
         if not filtered:
             return []
 
-        max_count = max(count for _, count in filtered)
-        denom = math.log(max_count + 1)
-        if denom == 0:
-            return [(word, 255) for word, _ in filtered]
+        counts = [count for _, count in filtered]
+        log_min = math.log(min(counts))
+        log_span = max(math.log(max(counts)) - log_min, 1)
 
         scaled = [
-            (word, max(0, min(255, round(255 * math.log(count + 1) / denom))))
+            (word, int((math.log(count) - log_min) * (max_f - min_f) / log_span + min_f))
             for word, count in filtered
         ]
         scaled.sort(key=lambda item: (-item[1], item[0]))
