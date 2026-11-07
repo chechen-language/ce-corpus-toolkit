@@ -96,7 +96,7 @@ python chechen_corpus_toolkit.py input.json --mode process --export all --save-r
 
 - **`palochka`**: Words containing ӏ (Chechen palochka) for iOS text replacement shortcuts
 - **`keyman`**: Optimized for Keyman keyboard software predictions (1-27 chars, filtered for quality)
-- **`aosp`**: AOSP `.combined` wordlist for Android open-source keyboards (HeliBoard, OpenBoard) — frequencies remapped to the 0–255 log scale
+- **`aosp`**: AOSP `.combined` wordlist for Android open-source keyboards (HeliBoard, OpenBoard) — frequencies remapped to the AOSP 15–254 log scale
 - **`all`**: Generates palochka, keyman, and aosp exports
 
 ### Corpus Normalization
@@ -150,14 +150,14 @@ exports/
 
 **AOSP `.combined` Format:**
 ```
-dictionary=main:ce,locale=ce,description=Chechen,date=1746316800,version=1
+dictionary=main:ce,locale=ce,description=Chechen,date=1746316800,version=19
  word=а,f=255
  word=ца,f=221
  word=ду,f=207
 ```
 
-Frequencies are mapped from raw counts to the AOSP 0–255 logarithmic scale:
-`f = round(255 * log(count + 1) / log(max_count + 1))`. The file can be compiled
+Frequencies are mapped from raw counts to the AOSP 15–254 logarithmic scale (same formula as aosp-dictionaries `scripts/wordlist.py`; values below 15 are special in AOSP):
+`f = int((ln(count) - ln(min_count)) * 239 / (ln(max_count) - ln(min_count)) + 15)`. The file can be compiled
 to a binary `.dict` with [aosp-dictionary-tools](https://github.com/remi0s/aosp-dictionary-tools):
 
 ```bash
