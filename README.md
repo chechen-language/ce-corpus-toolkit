@@ -150,7 +150,7 @@ exports/
 
 **AOSP `.combined` Format:**
 ```
-dictionary=main:ce,locale=ce,description=Chechen,date=1746316800,version=1
+dictionary=main:ce,locale=ce,description=Chechen,date=1746316800,version=19
  word=а,f=255
  word=ца,f=221
  word=ду,f=207

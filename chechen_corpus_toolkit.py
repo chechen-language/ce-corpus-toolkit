@@ -552,8 +552,9 @@ class ChechenCorpusToolkit:
         """
         try:
             header = (
+                # non-HeliBoard AOSP keyboards require version > 18
                 f"dictionary=main:{locale},locale={locale},"
-                f"description={description},date={int(time.time())},version=1"
+                f"description={description},date={int(time.time())},version=19"
             )
             with open(file_path, 'w', encoding='utf-8', newline='\n') as file:
                 file.write(header + "\n")
