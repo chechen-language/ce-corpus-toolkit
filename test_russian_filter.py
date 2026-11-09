@@ -49,7 +49,7 @@ class ProcessorTest(unittest.TestCase):
         processor.russian_lexicon = LEXICON
         frequencies = processor.process_corpus([{"text": "Хьо университетехь дика ву. Он сказал, что знает правду."}])
         self.assertEqual(set(frequencies), {"хьо", "университетехь", "дика", "ву"})
-        self.assertEqual(processor.removed_russian[RU], 5)
+        self.assertEqual(processor.removed_russian[("сказал", RU)], 1)
 
 
 if __name__ == "__main__":

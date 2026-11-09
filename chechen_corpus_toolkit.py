@@ -336,9 +336,11 @@ class ReportGenerator:
     def russian_filter_lines(processor: ChechenTextProcessor) -> List[str]:
         if not processor.russian_lexicon:
             return []
-        removed = processor.removed_russian
-        return [f"Russian words removed: {sum(removed.values()):,} "
-                f"(RU spans: {removed['RU']:,}, SWITCH insertions: {removed['SWITCH']:,})"]
+        by_tag = Counter()
+        for (_, tag), count in processor.removed_russian.items():
+            by_tag[tag] += count
+        return [f"Russian words removed: {sum(by_tag.values()):,} "
+                f"(RU spans: {by_tag['RU']:,}, SWITCH insertions: {by_tag['SWITCH']:,})"]
 
     @staticmethod
     def generate_normalization_report(transformations: List[Dict]) -> str:
@@ -679,6 +681,17 @@ class ChechenCorpusToolkit:
         
         word_frequencies = processor.process_corpus(corpus_data)
         
+        removed_file = None
+        if ru_wordlist:
+            removed_file = f"{output_dir}/removed_russian.tsv"
+            with open(removed_file, 'w', newline='', encoding='utf-8') as file:
+                writer = csv.writer(file, delimiter='	')
+                writer.writerow(['word', 'tag', 'removed', 'kept'])
+                writer.writerows(
+                    (word, tag, count, word_frequencies.get(word, 0))
+                    for (word, tag), count in sorted(processor.removed_russian.items(),
+                                                     key=lambda item: (-item[1], item[0])))
+        
         # Convert to sorted wordlist
         wordlist = sorted(word_frequencies.items(), key=lambda x: x[1], reverse=True)
         
@@ -735,6 +748,8 @@ class ChechenCorpusToolkit:
         for export_type, info in export_info.items():
             self._print(info['message'])
         
+        if removed_file:
+            self._print(f"Removed Russian words saved to: {removed_file}")
         if report_file_info:
             self._print(f"Processing report saved to: {report_file_info}")
         

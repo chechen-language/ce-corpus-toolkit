@@ -107,7 +107,7 @@ The corpus contains Russian quotes, citations and mixed texts. Pass a Russian AO
 python chechen_corpus_toolkit.py --mode process --export aosp --ru-wordlist path/to/aosp-dictionaries/wordlists/main_ru.combined
 ```
 
-`russian_filter.py` tags every word in its sentence: `CE`, `LOAN` (Russian stem with a Chechen ending, kept), `RU` (inside a Russian span, removed) or `SWITCH` (a lone Russian word in a Chechen sentence, removed). It is deterministic and needs no network or model. The processing summary reports how many words were removed per tag.
+`russian_filter.py` tags every word in its sentence: `CE`, `LOAN` (Russian stem with a Chechen ending, kept), `RU` (inside a Russian span, removed) or `SWITCH` (a lone Russian word in a Chechen sentence, removed). It is deterministic and needs no network or model. The processing summary reports how many words were removed per tag, and `removed_russian.tsv` in the output directory lists every removed word (`word`, `tag`, `removed`, `kept` = count left in the wordlist) for review.
 
 - `keep_words.txt`: native-confirmed words that are always kept, one per line. Add a word here to fix a wrong Russian verdict.
 - `evaluate_russian_filter.py`: precision and recall against labeled word lists, with the deciding rule for each error. Use it when tuning the thresholds and ending lists at the top of `russian_filter.py`.

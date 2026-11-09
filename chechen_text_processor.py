@@ -50,7 +50,7 @@ class ChechenTextProcessor:
         self.blacklisted_words: Set[str] = set()
         # Set to a russian_filter.Lexicon to strip Russian from each text before counting
         self.russian_lexicon = None
-        self.removed_russian: Counter = Counter()  # tag (RU, SWITCH) -> removed word count
+        self.removed_russian: Counter = Counter()  # (word, tag) -> removed count, tag is RU or SWITCH
 
         # Set up logging if enabled
         self.enable_logging = enable_logging
@@ -324,7 +324,7 @@ class ChechenTextProcessor:
 
             if self.russian_lexicon:
                 text, removed = strip_russian(text, self.russian_lexicon)
-                self.removed_russian.update(tag for _, tag in removed)
+                self.removed_russian.update(removed)
 
             words = self.extract_and_clean_words(text, track_changes=True)
             all_words.extend(words)
