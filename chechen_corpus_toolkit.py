@@ -22,6 +22,7 @@ import csv
 import argparse
 import gzip
 import math
+import re
 import shutil
 import sys
 import time
@@ -31,6 +32,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from collections import Counter
 
 from chechen_text_processor import ChechenTextProcessor
+from russian_filter import build_lexicon
 
 DEFAULT_CORPUS_URL = "https://dosham-corpora.s3.eu-central-2.amazonaws.com/sources/latest.json.gz"
 CACHE_DIR = Path(".cache")
@@ -168,8 +170,8 @@ class ExportGenerator:
             if not (min_length <= len(word) <= max_length):
                 continue
 
-            # Remove words with excessive repetition (like "ааа")
-            if len(set(word)) == 1 and len(word) > 2:
+            # Chechen geminates are at most double, so any letter tripled ("ааа", "дааа") is noise
+            if re.search(r'(.)\1\1', word):
                 continue
 
             filtered_words.append((word, count))
@@ -178,23 +180,24 @@ class ExportGenerator:
 
     @staticmethod
     def map_to_aosp_frequencies(wordlist: List[Tuple[str, int]]) -> List[Tuple[str, int]]:
-        """Map raw counts to AOSP's 0–255 logarithmic frequency scale.
+        """Map raw counts to the AOSP frequency range 15–254 on a log scale.
 
-        f = round(255 * log(count + 1) / log(max_count + 1))
+        Same formula as aosp-dictionaries scripts/wordlist.py create_wordlist_combined:
+        values below 15 are special in AOSP, so normal words must not use them.
         Returns the filtered (Keyman-style) wordlist with counts replaced by
         AOSP frequencies, sorted by frequency descending then word ascending.
         """
+        min_f, max_f = 15, 254
         filtered = ExportGenerator.filter_keyman_words(wordlist)
         if not filtered:
             return []
 
-        max_count = max(count for _, count in filtered)
-        denom = math.log(max_count + 1)
-        if denom == 0:
-            return [(word, 255) for word, _ in filtered]
+        counts = [count for _, count in filtered]
+        log_min = math.log(min(counts))
+        log_span = max(math.log(max(counts)) - log_min, 1)
 
         scaled = [
-            (word, max(0, min(255, round(255 * math.log(count + 1) / denom))))
+            (word, int((math.log(count) - log_min) * (max_f - min_f) / log_span + min_f))
             for word, count in filtered
         ]
         scaled.sort(key=lambda item: (-item[1], item[0]))
@@ -320,6 +323,7 @@ class ReportGenerator:
         lines.append("Processing Summary:")
         lines.append(f"Total words processed: {total_words:,}")
         lines.append(f"Unique words found: {unique_words:,}")
+        lines.extend(ReportGenerator.russian_filter_lines(processor))
         lines.append("")
         lines.append("Export Summary:")
         for export_type, export_words in exports.items():
@@ -328,6 +332,16 @@ class ReportGenerator:
         
         return "\n".join(lines)
     
+    @staticmethod
+    def russian_filter_lines(processor: ChechenTextProcessor) -> List[str]:
+        if not processor.russian_lexicon:
+            return []
+        by_tag = Counter()
+        for (_, tag), count in processor.removed_russian.items():
+            by_tag[tag] += count
+        return [f"Russian words removed: {sum(by_tag.values()):,} "
+                f"(RU spans: {by_tag['RU']:,}, SWITCH insertions: {by_tag['SWITCH']:,})"]
+
     @staticmethod
     def generate_normalization_report(transformations: List[Dict]) -> str:
         """Generate normalization report for fix-corpus mode."""
@@ -552,8 +566,9 @@ class ChechenCorpusToolkit:
         """
         try:
             header = (
+                # non-HeliBoard AOSP keyboards require version > 18
                 f"dictionary=main:{locale},locale={locale},"
-                f"description={description},date={int(time.time())},version=1"
+                f"description={description},date={int(time.time())},version=19"
             )
             with open(file_path, 'w', encoding='utf-8', newline='\n') as file:
                 file.write(header + "\n")
@@ -641,7 +656,8 @@ class ChechenCorpusToolkit:
     
     def mode_process(self, input_file: str, export_types: List[str], 
                     output_dir: str = "exports", min_frequency: int = 1,
-                    blacklist_file: Optional[str] = None, save_report: bool = False) -> None:
+                    blacklist_file: Optional[str] = None, save_report: bool = False,
+                    ru_wordlist: Optional[str] = None) -> None:
         """Execute process mode - generate filtered exports directly from corpus."""
         self._print("=== PROCESS MODE ===")
         
@@ -657,8 +673,24 @@ class ChechenCorpusToolkit:
         if blacklist_file:
             if processor.load_blacklist(blacklist_file):
                 self._print(f"Loaded blacklist: {blacklist_file}")
+        if ru_wordlist:
+            processor.russian_lexicon = build_lexicon(
+                ru_wordlist,
+                (e["text"] for e in corpus_data if isinstance(e, dict) and isinstance(e.get("text"), str)))
+            self._print(f"Russian filter on: {ru_wordlist}")
         
         word_frequencies = processor.process_corpus(corpus_data)
+        
+        removed_file = None
+        if ru_wordlist:
+            removed_file = f"{output_dir}/removed_russian.tsv"
+            with open(removed_file, 'w', newline='', encoding='utf-8') as file:
+                writer = csv.writer(file, delimiter='	')
+                writer.writerow(['word', 'tag', 'removed', 'kept'])
+                writer.writerows(
+                    (word, tag, count, word_frequencies.get(word, 0))
+                    for (word, tag), count in sorted(processor.removed_russian.items(),
+                                                     key=lambda item: (-item[1], item[0])))
         
         # Convert to sorted wordlist
         wordlist = sorted(word_frequencies.items(), key=lambda x: x[1], reverse=True)
@@ -716,6 +748,8 @@ class ChechenCorpusToolkit:
         for export_type, info in export_info.items():
             self._print(info['message'])
         
+        if removed_file:
+            self._print(f"Removed Russian words saved to: {removed_file}")
         if report_file_info:
             self._print(f"Processing report saved to: {report_file_info}")
         
@@ -726,6 +760,8 @@ class ChechenCorpusToolkit:
         self._print("Processing Summary:")
         self._print(f"Total words processed: {total_words:,}")
         self._print(f"Unique words found: {unique_words:,}")
+        for line in ReportGenerator.russian_filter_lines(processor):
+            self._print(line)
         self._print("")
         self._print("Export Summary:")
         for export_type, info in export_info.items():
@@ -775,7 +811,7 @@ class ChechenCorpusToolkit:
     
     def mode_all(self, input_file: str, export_types: List[str], 
                 output_dir: str = "exports", min_frequency: int = 1,
-                blacklist_file: Optional[str] = None) -> None:
+                blacklist_file: Optional[str] = None, ru_wordlist: Optional[str] = None) -> None:
         """Execute all mode - complete pipeline."""
         self._print("=== ALL MODE - COMPLETE PIPELINE ===")
         
@@ -787,7 +823,7 @@ class ChechenCorpusToolkit:
         # Step 2: Process exports from normalized corpus
         self._print("\n📊 Step 2: Processing exports...")
         self.mode_process(fixed_corpus_file, export_types, output_dir, 
-                         min_frequency, blacklist_file, save_report=True)
+                         min_frequency, blacklist_file, save_report=True, ru_wordlist=ru_wordlist)
         
         self._print(f"\n🎉 Complete pipeline finished! Check {output_dir}/ for all outputs")
 
@@ -827,6 +863,9 @@ Examples:
     parser.add_argument('--output-dir', default='exports',
                        help='Output directory (default: exports)')
     parser.add_argument('--blacklist', help='Blacklist file path')
+    parser.add_argument('--ru-wordlist',
+                       help='Russian AOSP .combined wordlist (e.g. aosp-dictionaries wordlists/main_ru.combined); '
+                            'when given, Russian is removed from the corpus before counting (process/all modes)')
     parser.add_argument('--min-frequency', type=int, default=1,
                        help='Minimum word frequency (default: 1)')
     parser.add_argument('--save-report', action='store_true',
@@ -878,7 +917,8 @@ Examples:
                 args.output_dir,
                 args.min_frequency,
                 args.blacklist,
-                args.save_report
+                args.save_report,
+                args.ru_wordlist
             )
             
         elif args.mode == 'fix-corpus':
@@ -894,7 +934,8 @@ Examples:
                 args.export,
                 args.output_dir,
                 args.min_frequency,
-                args.blacklist
+                args.blacklist,
+                args.ru_wordlist
             )
         
         end_time = time.time()

@@ -15,6 +15,8 @@ from collections import Counter
 from typing import Dict, List, Set, Tuple, Optional
 # from pathlib import Path  # Reserved for future use
 
+from russian_filter import strip_russian
+
 
 class ChechenTextProcessor:
     """Enhanced Chechen text processor with advanced normalization and validation."""
@@ -46,7 +48,10 @@ class ChechenTextProcessor:
         self.length_changes: List[Tuple[str, str, int]] = []
         self.non_chechen_chars: Dict[str, Dict[str, int]] = {}
         self.blacklisted_words: Set[str] = set()
-        
+        # Set to a russian_filter.Lexicon to strip Russian from each text before counting
+        self.russian_lexicon = None
+        self.removed_russian: Counter = Counter()  # (word, tag) -> removed count, tag is RU or SWITCH
+
         # Set up logging if enabled
         self.enable_logging = enable_logging
         if enable_logging:
@@ -205,9 +210,9 @@ class ChechenTextProcessor:
         # Handle compound words with hyphens
         if '-' in word:
             parts = word.split('-')
-            # Keep compound words if all parts are valid Chechen
-            if all(all(char in self.chechen_letters for char in part) 
-                   for part in parts if part):
+            # Empty parts ("ду-", "-а", "--") are line-break or quote fragments, not compounds
+            if all(part and all(char in self.chechen_letters for char in part)
+                   for part in parts):
                 return word
         
         # Remove non-Chechen characters
@@ -316,7 +321,11 @@ class ChechenTextProcessor:
             text = entry["text"]
             if not isinstance(text, str):
                 continue
-            
+
+            if self.russian_lexicon:
+                text, removed = strip_russian(text, self.russian_lexicon)
+                self.removed_russian.update(removed)
+
             words = self.extract_and_clean_words(text, track_changes=True)
             all_words.extend(words)
         
