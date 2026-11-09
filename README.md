@@ -99,6 +99,19 @@ python chechen_corpus_toolkit.py input.json --mode process --export all --save-r
 - **`aosp`**: AOSP `.combined` wordlist for Android open-source keyboards (HeliBoard, OpenBoard) — frequencies remapped to the AOSP 15–254 log scale
 - **`all`**: Generates palochka, keyman, and aosp exports
 
+**Russian filter (`--ru-wordlist`):**
+
+The corpus contains Russian quotes, citations and mixed texts. Pass a Russian AOSP wordlist to remove Russian before counting:
+
+```bash
+python chechen_corpus_toolkit.py --mode process --export aosp --ru-wordlist path/to/aosp-dictionaries/wordlists/main_ru.combined
+```
+
+`russian_filter.py` tags every word in its sentence: `CE`, `LOAN` (Russian stem with a Chechen ending, kept), `RU` (inside a Russian span, removed) or `SWITCH` (a lone Russian word in a Chechen sentence, removed). It is deterministic and needs no network or model. The processing summary reports how many words were removed per tag.
+
+- `keep_words.txt`: native-confirmed words that are always kept, one per line. Add a word here to fix a wrong Russian verdict.
+- `evaluate_russian_filter.py`: precision and recall against labeled word lists, with the deciding rule for each error. Use it when tuning the thresholds and ending lists at the top of `russian_filter.py`.
+
 ### Corpus Normalization
 Apply character normalizations to source corpus:
 
