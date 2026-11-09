@@ -32,6 +32,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from collections import Counter
 
 from chechen_text_processor import ChechenTextProcessor
+from russian_filter import build_lexicon
 
 DEFAULT_CORPUS_URL = "https://dosham-corpora.s3.eu-central-2.amazonaws.com/sources/latest.json.gz"
 CACHE_DIR = Path(".cache")
@@ -322,6 +323,7 @@ class ReportGenerator:
         lines.append("Processing Summary:")
         lines.append(f"Total words processed: {total_words:,}")
         lines.append(f"Unique words found: {unique_words:,}")
+        lines.extend(ReportGenerator.russian_filter_lines(processor))
         lines.append("")
         lines.append("Export Summary:")
         for export_type, export_words in exports.items():
@@ -330,6 +332,14 @@ class ReportGenerator:
         
         return "\n".join(lines)
     
+    @staticmethod
+    def russian_filter_lines(processor: ChechenTextProcessor) -> List[str]:
+        if not processor.russian_lexicon:
+            return []
+        removed = processor.removed_russian
+        return [f"Russian words removed: {sum(removed.values()):,} "
+                f"(RU spans: {removed['RU']:,}, SWITCH insertions: {removed['SWITCH']:,})"]
+
     @staticmethod
     def generate_normalization_report(transformations: List[Dict]) -> str:
         """Generate normalization report for fix-corpus mode."""
@@ -644,7 +654,8 @@ class ChechenCorpusToolkit:
     
     def mode_process(self, input_file: str, export_types: List[str], 
                     output_dir: str = "exports", min_frequency: int = 1,
-                    blacklist_file: Optional[str] = None, save_report: bool = False) -> None:
+                    blacklist_file: Optional[str] = None, save_report: bool = False,
+                    ru_wordlist: Optional[str] = None) -> None:
         """Execute process mode - generate filtered exports directly from corpus."""
         self._print("=== PROCESS MODE ===")
         
@@ -660,6 +671,11 @@ class ChechenCorpusToolkit:
         if blacklist_file:
             if processor.load_blacklist(blacklist_file):
                 self._print(f"Loaded blacklist: {blacklist_file}")
+        if ru_wordlist:
+            processor.russian_lexicon = build_lexicon(
+                ru_wordlist,
+                (e["text"] for e in corpus_data if isinstance(e, dict) and isinstance(e.get("text"), str)))
+            self._print(f"Russian filter on: {ru_wordlist}")
         
         word_frequencies = processor.process_corpus(corpus_data)
         
@@ -729,6 +745,8 @@ class ChechenCorpusToolkit:
         self._print("Processing Summary:")
         self._print(f"Total words processed: {total_words:,}")
         self._print(f"Unique words found: {unique_words:,}")
+        for line in ReportGenerator.russian_filter_lines(processor):
+            self._print(line)
         self._print("")
         self._print("Export Summary:")
         for export_type, info in export_info.items():
@@ -778,7 +796,7 @@ class ChechenCorpusToolkit:
     
     def mode_all(self, input_file: str, export_types: List[str], 
                 output_dir: str = "exports", min_frequency: int = 1,
-                blacklist_file: Optional[str] = None) -> None:
+                blacklist_file: Optional[str] = None, ru_wordlist: Optional[str] = None) -> None:
         """Execute all mode - complete pipeline."""
         self._print("=== ALL MODE - COMPLETE PIPELINE ===")
         
@@ -790,7 +808,7 @@ class ChechenCorpusToolkit:
         # Step 2: Process exports from normalized corpus
         self._print("\n📊 Step 2: Processing exports...")
         self.mode_process(fixed_corpus_file, export_types, output_dir, 
-                         min_frequency, blacklist_file, save_report=True)
+                         min_frequency, blacklist_file, save_report=True, ru_wordlist=ru_wordlist)
         
         self._print(f"\n🎉 Complete pipeline finished! Check {output_dir}/ for all outputs")
 
@@ -830,6 +848,9 @@ Examples:
     parser.add_argument('--output-dir', default='exports',
                        help='Output directory (default: exports)')
     parser.add_argument('--blacklist', help='Blacklist file path')
+    parser.add_argument('--ru-wordlist',
+                       help='Russian AOSP .combined wordlist (e.g. aosp-dictionaries wordlists/main_ru.combined); '
+                            'when given, Russian is removed from the corpus before counting (process/all modes)')
     parser.add_argument('--min-frequency', type=int, default=1,
                        help='Minimum word frequency (default: 1)')
     parser.add_argument('--save-report', action='store_true',
@@ -881,7 +902,8 @@ Examples:
                 args.output_dir,
                 args.min_frequency,
                 args.blacklist,
-                args.save_report
+                args.save_report,
+                args.ru_wordlist
             )
             
         elif args.mode == 'fix-corpus':
@@ -897,7 +919,8 @@ Examples:
                 args.export,
                 args.output_dir,
                 args.min_frequency,
-                args.blacklist
+                args.blacklist,
+                args.ru_wordlist
             )
         
         end_time = time.time()

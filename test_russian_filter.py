@@ -1,5 +1,6 @@
 import unittest
 
+from chechen_text_processor import ChechenTextProcessor
 from russian_filter import CE, LOAN, RU, SWITCH, Lexicon, strip_russian, tag
 
 RUSSIAN = {w: 150 for w in ("он", "сказал", "что", "знает", "правду", "не", "как", "воду", "глядел",
@@ -40,6 +41,15 @@ class ContextTest(unittest.TestCase):
         self.assertEqual(clean.split(), "Хьо дика ву. , . Со цӏа вогӏу, хьажа.".split())
         self.assertEqual(removed, [("он", RU), ("сказал", RU), ("что", RU), ("знает", RU), ("правду", RU),
                                    ("телевизор", SWITCH)])
+
+
+class ProcessorTest(unittest.TestCase):
+    def test_russian_absent_from_frequencies(self):
+        processor = ChechenTextProcessor()
+        processor.russian_lexicon = LEXICON
+        frequencies = processor.process_corpus([{"text": "Хьо университетехь дика ву. Он сказал, что знает правду."}])
+        self.assertEqual(set(frequencies), {"хьо", "университетехь", "дика", "ву"})
+        self.assertEqual(processor.removed_russian[RU], 5)
 
 
 if __name__ == "__main__":
